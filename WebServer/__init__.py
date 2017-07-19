@@ -64,10 +64,12 @@ class PeeweeConnectionMiddleware(object):
     def process_request(self, request, response):
         '''Open a connection.'''
         database.connect()
+        database.begin()
 
     def process_response(self, request, response, resource):
         '''Close the connection.'''
         if not database.is_closed():
+            database.commit()
             database.close()
 
 class ResponseFormatMiddleware(object):
@@ -107,6 +109,8 @@ class AuthMiddleware(object):
                                           description,
                                           challenges,
                                           href='http://docs.example.com/auth')
+            response.body = {'Success': False}
+            response.status = falcon.HTTP_403
 
     def _token_is_valid(self, token, account_id):
         return token is not None and account_id is not None
@@ -125,6 +129,7 @@ class CatchAllHandler(Exception):
             # Don't log stack trace for request errors
             raise ex
 
+        database.rollback()
         raise falcon.HTTPInternalServerError('Internal server error.',
                                              'An internal error occurred. If this problem persists,'
                                              + ' please contact us.')
@@ -144,6 +149,18 @@ class RootResource(object):
         response.body = 'Hello, World!'
         response.status = falcon.HTTP_200
 
+class RegisterResource(object):
+    ''' Resource for handline registrations '''
+    def on_get(self, request, response):
+        response.body = {'Success': True}
+        response.status = falcon.HTTP_200
+
+    def on_post(self, request, response):
+        username = request.params['username']
+        password = request.params['password']
+        response.body = {'Success': True}
+        response.status = falcon.HTTP_200
+
 class LoginResource(object):
     ''' Resource for handing logins '''
     def on_get(self, request, response):
@@ -153,11 +170,14 @@ class LoginResource(object):
 
     def on_post(self, request, response):
         ''' Logs user in '''
+        token = 'asdhgadsjsf'
+        response.set_cookie('codejam_token', token)
         response.body = {'Success': True, 'Message': 'You have successfully logged in'}
         response.status = falcon.HTTP_200
 
 class LogoutResource(object):
     def on_get(self, request, response):
+        response.unset_cookie('codejam_token')
         response.body = {'Success': True, 'Message': 'You have successfully logged out'}
         response.status = falcon.HTTP_200
 
@@ -207,6 +227,7 @@ class WebApi(falcon.API):
     def register_routes(self):
         self.add_route('/', RootResource())
         self.add_route('/login', LoginResource())
+        self.add_route('/register', RegisterResource())
         self.add_route('/problems', ProblemCollection())
         self.add_route('/problem', ProblemResource())
         self.add_route('/competitors', UserCollection())
